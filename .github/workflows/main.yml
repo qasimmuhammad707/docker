@@ -1,4 +1,4 @@
-name: Deploy Node App to EC2
+name: Deploy to EC2 Directly (No ECR)
 
 on:
   push:
@@ -9,50 +9,51 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     steps:
-      # 1. Checkout code
+      # 1. GitHub se code uthana
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      # 2. Setup Node
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: 20
+      # 2. GitHub Runner ke andar Docker image build karna
+      - name: Build Docker Image
+        run: |
+          docker build -t node-app:latest .
 
-      # 3. Install dependencies
-      - name: Install Dependencies
-        run: npm install
+      # 3. Image ko ek file (.tar) mein save karna taake EC2 par bheji ja sake
+      - name: Save Docker Image to Tar File
+        run: |
+          docker save node-app:latest -o node-app.tar
 
-      # 4. Deploy to EC2 via SSH
-      - name: Deploy to EC2 via SSH
-        uses: appleboy/ssh-action@v1.0.3
+      # 4. Us Tar file ko SCP ke zariye direct EC2 par transfer karna
+      - name: Copy Docker Image to EC2
+        uses: appleboy/scp-action@master
         with:
-          host: ${{ secrets.EC2_HOST }}       # secrets. lagaya
-          username: ${{ secrets.EC2_USER }}   # secrets. lagaya
-          key: ${{ secrets.EC2_SSH_KEY }}     # Naam sahi kiya: EC2_SSH_KEY
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "node-app.tar"
+          target: "/home/ubuntu/"
+
+      # 5. EC2 ke andar SSH karke image ko load karna aur container chalana
+      - name: SSH into EC2 and Run Container
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            # Folder banana agar na ho, aur usme jana
-            mkdir -p /home/ubuntu/app && cd /home/ubuntu/app
+            # 1. EC2 ke andar tar file se Docker image load karna
+            docker load -i /home/ubuntu/node-app.tar
             
-            # Purana container stop aur remove karna
+            # 2. Purana container stop aur remove karna (agar chal raha ho)
             docker stop node-app || true
             docker rm node-app || true
             
-            # Agar repo pehle se cloned hai toh pull karein, warna naya clone karein
-            if [ -d ".git" ]; then
-              git pull
-            else
-              # Yahan aapne apni sahi GitHub repo ka URL dalna hai
-              git clone https://github.com/your-username/your-repo.git .
-            fi
-            
-            # EC2 ke upar hi fresh Docker image build karna
-            docker build -t node-app .
-            
-            # Container run karna (Port 3000 par)
+            # 3. Naya container chalana (Port 3000 par)
             docker run -d \
-              -p 3000:3000 \
               --name node-app \
+              -p 3000:3000 \
               --restart always \
-              -e NODE_ENV=production \
-              node-app
+              node-app:latest
+            
+            # 4. Safai: Bheji gayi tar file delete karna taake EC2 ki space na bhare
+            rm -f /home/ubuntu/node-app.tar
