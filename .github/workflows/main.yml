@@ -1,4 +1,4 @@
-name: Node.js Docker CI/CD to EC2
+name: Deploy Node App to EC2
 
 on:
   push:
@@ -8,7 +8,6 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-
     steps:
       # 1. Checkout code
       - name: Checkout Code
@@ -24,35 +23,36 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
-      # 4. Build Docker Image
-      - name: Build Docker Image
-        run: |
-          docker build -t node-app:latest .
-
-      # 5. Copy files to EC2
+      # 4. Deploy to EC2 via SSH
       - name: Deploy to EC2 via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ EC2_HOST }}
-          username: ${{ EC2_USER }}
-          key: ${{ EC2_KEY }}
+          host: ${{ secrets.EC2_HOST }}       # secrets. lagaya
+          username: ${{ secrets.EC2_USER }}   # secrets. lagaya
+          key: ${{ secrets.EC2_SSH_KEY }}     # Naam sahi kiya: EC2_SSH_KEY
           script: |
-            cd /home/ubuntu/app || mkdir -p /home/ubuntu/app && cd /home/ubuntu/app
-
-            # stop old container if running
+            # Folder banana agar na ho, aur usme jana
+            mkdir -p /home/ubuntu/app && cd /home/ubuntu/app
+            
+            # Purana container stop aur remove karna
             docker stop node-app || true
             docker rm node-app || true
-
-            # pull/build latest code
-            git clone https://github.com/your-repo.git || cd your-repo && git pull
-
-            # build docker image on EC2
+            
+            # Agar repo pehle se cloned hai toh pull karein, warna naya clone karein
+            if [ -d ".git" ]; then
+              git pull
+            else
+              # Yahan aapne apni sahi GitHub repo ka URL dalna hai
+              git clone https://github.com/your-username/your-repo.git .
+            fi
+            
+            # EC2 ke upar hi fresh Docker image build karna
             docker build -t node-app .
-
-            # run container with env variables
+            
+            # Container run karna (Port 3000 par)
             docker run -d \
               -p 3000:3000 \
               --name node-app \
+              --restart always \
               -e NODE_ENV=production \
-              -e PORT=${{ secrets.APP_PORT }} \
               node-app
