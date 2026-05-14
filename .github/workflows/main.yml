@@ -1,0 +1,58 @@
+name: Node.js Docker CI/CD to EC2
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout code
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      # 2. Setup Node
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20
+
+      # 3. Install dependencies
+      - name: Install Dependencies
+        run: npm install
+
+      # 4. Build Docker Image
+      - name: Build Docker Image
+        run: |
+          docker build -t node-app:latest .
+
+      # 5. Copy files to EC2
+      - name: Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_KEY }}
+          script: |
+            cd /home/ubuntu/app || mkdir -p /home/ubuntu/app && cd /home/ubuntu/app
+
+            # stop old container if running
+            docker stop node-app || true
+            docker rm node-app || true
+
+            # pull/build latest code
+            git clone https://github.com/your-repo.git || cd your-repo && git pull
+
+            # build docker image on EC2
+            docker build -t node-app .
+
+            # run container with env variables
+            docker run -d \
+              -p 3000:3000 \
+              --name node-app \
+              -e NODE_ENV=production \
+              -e PORT=${{ secrets.APP_PORT }} \
+              node-app
